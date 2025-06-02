@@ -727,10 +727,11 @@ where
 								last_round_estimate.0
 							}
 						},
-						Err(crate::Error::NotDescendent) => {
+						Err(err) => {
 							// This is only possible in case of massive equivocation
 							warn!(
 								target: LOG_TARGET,
+								?err,
 								"Possible case of massive equivocation: \
 								last round prevote GHOST: {:?} is not a descendant of last round estimate: {:?}",
 								last_prevote_g,
