@@ -31,7 +31,7 @@ use futures::{
 	ready,
 };
 #[cfg(feature = "std")]
-use log::trace;
+use tracing::trace;
 
 use parking_lot::Mutex;
 

@@ -18,7 +18,7 @@
 use futures::ready;
 use futures::{channel::mpsc::UnboundedSender, prelude::*};
 #[cfg(feature = "std")]
-use log::{debug, trace, warn};
+use tracing::{debug, trace, warn};
 
 use std::{
 	pin::Pin,
@@ -236,7 +236,7 @@ where
 				"Round {} completable but estimate not finalized.",
 				self.round_number()
 			);
-			self.log_participation(log::Level::Trace);
+			self.log_participation(tracing::Level::TRACE);
 			return Poll::Pending
 		}
 
@@ -248,7 +248,7 @@ where
 			self.state
 		);
 
-		self.log_participation(log::Level::Debug);
+		self.log_participation(tracing::Level::DEBUG);
 
 		// both exit conditions verified, we can complete this round
 		Poll::Ready(Ok(()))
@@ -411,7 +411,7 @@ where
 		Ok(())
 	}
 
-	fn log_participation(&self, log_level: log::Level) {
+	fn log_participation(&self, log_level: tracing::Level) {
 		let total_weight = self.voters().total_weight();
 		let threshold = self.voters().threshold();
 		let n_voters = self.voters().len();
@@ -420,8 +420,20 @@ where
 		let (prevote_weight, n_prevotes) = self.votes.prevote_participation();
 		let (precommit_weight, n_precommits) = self.votes.precommit_participation();
 
-		log::log!(
-			target: LOG_TARGET,
+		// Helper macro to avoid repetition and overcome log target not being const.
+		macro_rules! log_event {
+			($level:expr, $($args:tt)+) => {
+				match $level {
+					tracing::Level::ERROR => tracing::error!(target: LOG_TARGET, $($args)+),
+					tracing::Level::WARN => tracing::warn!(target: LOG_TARGET, $($args)+),
+					tracing::Level::INFO => tracing::info!(target: LOG_TARGET, $($args)+),
+					tracing::Level::DEBUG => tracing::debug!(target: LOG_TARGET, $($args)+),
+					tracing::Level::TRACE => tracing::trace!(target: LOG_TARGET, $($args)+),
+				}
+			};
+		}
+
+		log_event!(
 			log_level,
 			"Round {}: prevotes: {}/{}/{} weight, {}/{} actual",
 			number,
@@ -432,8 +444,7 @@ where
 			n_voters
 		);
 
-		log::log!(
-			target: LOG_TARGET,
+		log_event!(
 			log_level,
 			"Round {}: precommits: {}/{}/{} weight, {}/{} actual",
 			number,

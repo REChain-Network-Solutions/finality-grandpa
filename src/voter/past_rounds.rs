@@ -30,7 +30,7 @@ use futures::{
 	task,
 };
 #[cfg(feature = "std")]
-use log::{debug, trace};
+use tracing::{debug, trace};
 
 use std::{
 	cmp,
