@@ -517,8 +517,7 @@ where
 		cx: &mut Context,
 		last_round_state: &RoundState<H, N>,
 	) -> Result<(), E::Error> {
-		let state = self.state.take();
-
+		// Returns true if the state advances to `Prevoting`.
 		let start_prevoting = |this: &mut Self,
 		                       mut prevote_timer: E::Timer,
 		                       precommit_timer: E::Timer,
@@ -547,6 +546,7 @@ where
 					cx.waker().wake_by_ref();
 
 					this.state = Some(State::Prevoting(precommit_timer, (base, best_chain)));
+					return Ok(true)
 				} else {
 					this.state = Some(State::Prevoted(precommit_timer));
 				}
@@ -556,7 +556,7 @@ where
 				this.state = Some(State::Start(prevote_timer, precommit_timer));
 			}
 
-			Ok(())
+			Ok(false)
 		};
 
 		let finish_prevoting = |this: &mut Self,
@@ -597,19 +597,37 @@ where
 			Ok(())
 		};
 
-		match state {
-			Some(State::Start(prevote_timer, precommit_timer)) => {
-				start_prevoting(self, prevote_timer, precommit_timer, false, cx)?;
-			},
-			Some(State::Proposed(prevote_timer, precommit_timer)) => {
-				start_prevoting(self, prevote_timer, precommit_timer, true, cx)?;
-			},
+		// If we are starting the prevoting phase (ie we have moved from to `State::Prevoting`),
+		// the context waker needs to be saved by the `best_chain` future.
+		// Instead of waking up the whole task, perform on final step to ensure the waker is saved.
+		let state = self.state.take();
+		let should_poll_prevoting = match state {
+			Some(State::Start(prevote_timer, precommit_timer)) =>
+				start_prevoting(self, prevote_timer, precommit_timer, false, cx)?,
+			Some(State::Proposed(prevote_timer, precommit_timer)) =>
+				start_prevoting(self, prevote_timer, precommit_timer, true, cx)?,
 			Some(State::Prevoting(precommit_timer, (base, best_chain))) => {
 				finish_prevoting(self, precommit_timer, base, best_chain, cx)?;
+				false
 			},
 			x => {
 				self.state = x;
+				false
 			},
+		};
+
+		if should_poll_prevoting {
+			// we have switched to `State::Prevoting`, so we need to poll the `best_chain` future to sale the waker.
+			let state = self.state.take();
+			if let Some(State::Prevoting(precommit_timer, (base, best_chain))) = state {
+				finish_prevoting(self, precommit_timer, base, best_chain, cx)?;
+			} else {
+				panic!(
+					"Expected state to be `State::Prevoting` after polling `start_prevoting`, \
+					but got: {:?}",
+					state
+				);
+			}
 		}
 
 		Ok(())
