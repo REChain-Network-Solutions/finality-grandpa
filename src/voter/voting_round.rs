@@ -590,7 +590,7 @@ where
 			Ok(())
 		};
 
-		// If we are starting the prevoting phase (ie we have moved from to `State::Prevoting`),
+		// If we are starting the prevoting phase (ie we have moved to `State::Prevoting`),
 		// the context waker needs to be saved by the `best_chain` future.
 		// Instead of waking up the whole task, perform on final step to ensure the waker is saved.
 		let state = self.state.take();
