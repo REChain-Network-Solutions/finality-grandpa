@@ -775,20 +775,31 @@ where
 		{
 			let mut inner = self.inner.lock();
 
-			let should_start_next = {
-				let completable = match inner.best_round.poll(cx)? {
-					Poll::Ready(()) => true,
-					Poll::Pending => false,
-				};
-
-				// start when we've cast all votes.
-				let precommitted =
-					matches!(inner.best_round.state(), Some(&VotingRoundState::Precommitted));
-
-				completable && precommitted
+			// Best round must be completable before we can start a new one.
+			match inner.best_round.poll(cx)? {
+				Poll::Ready(()) => {},
+				Poll::Pending => return Poll::Pending,
 			};
 
-			if !should_start_next {
+			// The state of the best round must advance to the point where we can
+			// start a new round.
+			// We can effectively start a new round when:
+			// - the best round future completed
+			// - the best round state is precommitted, which means we have cast all votes
+			let precommitted =
+				matches!(inner.best_round.state(), Some(&VotingRoundState::Precommitted));
+			if !precommitted {
+				trace!(
+					target: LOG_TARGET,
+					"Best round at {} is not precommitted. Waiting for precommit in state {:?}",
+					inner.best_round.round_number(),
+					inner.best_round.state(),
+				);
+
+				// This ensures we are not causing delays in the voting process. Previously,
+				// we relied on polling the future again which would save the waker via `process_incoming`.
+				inner.best_round.set_waker(cx.waker().clone());
+
 				return Poll::Pending
 			}
 
