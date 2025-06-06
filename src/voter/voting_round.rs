@@ -538,13 +538,6 @@ where
 					);
 
 					let (base, best_chain) = this.construct_prevote(last_round_state);
-
-					// since we haven't polled the future above yet we need to
-					// manually schedule the current task to be awoken so the
-					// `best_chain` future is then polled below after we switch the
-					// state to `Prevoting`.
-					cx.waker().wake_by_ref();
-
 					this.state = Some(State::Prevoting(precommit_timer, (base, best_chain)));
 					return Ok(true)
 				} else {
