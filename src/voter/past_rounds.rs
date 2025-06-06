@@ -323,7 +323,7 @@ where
 
 	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
 		loop {
-			match Stream::poll_next(Pin::new(&mut self.past_rounds), cx) {
+			match self.past_rounds.poll_next_unpin(cx) {
 				Poll::Ready(Some((Ok(BackgroundRoundChange::Concluded(number)), round))) => {
 					let round = &round.inner;
 					round.env().concluded(

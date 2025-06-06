@@ -602,17 +602,13 @@ where
 			let mut inner = self.inner.lock();
 
 			// Do work on all background rounds, broadcasting any commits generated.
-			while let Poll::Ready(Some(item)) =
-				Stream::poll_next(Pin::new(&mut inner.past_rounds), cx)
-			{
+			while let Poll::Ready(Some(item)) = inner.past_rounds.poll_next_unpin(cx) {
 				let (number, commit) = item?;
 				self.global_out.push(CommunicationOut::Commit(number, commit));
 			}
 		}
 
-		while let Poll::Ready(res) =
-			Stream::poll_next(Pin::new(&mut self.finalized_notifications), cx)
-		{
+		while let Poll::Ready(res) = self.finalized_notifications.poll_next_unpin(cx) {
 			let inner = self.inner.clone();
 			let mut inner = inner.lock();
 
@@ -642,7 +638,7 @@ where
 	/// Otherwise, we will simply handle the commit and issue a finalization command
 	/// to the environment.
 	fn process_incoming(&mut self, cx: &mut Context) -> Result<(), E::Error> {
-		while let Poll::Ready(Some(item)) = Stream::poll_next(Pin::new(&mut self.global_in), cx) {
+		while let Poll::Ready(Some(item)) = self.global_in.poll_next_unpin(cx) {
 			match item? {
 				CommunicationIn::Commit(round_number, commit, mut process_commit_outcome) => {
 					trace!(
