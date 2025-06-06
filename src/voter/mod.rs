@@ -809,38 +809,32 @@ where
 				inner.best_round.round_number(),
 				inner.best_round.round_number() + 1,
 			);
-		}
 
-		self.completed_best_round()?;
+			// Complete the best round and start a new one.
+			self.env.completed(
+				inner.best_round.round_number(),
+				inner.best_round.round_state(),
+				inner.best_round.dag_base(),
+				inner.best_round.historical_votes(),
+			)?;
+
+			let old_round_number = inner.best_round.round_number();
+
+			let next_round = VotingRound::new(
+				old_round_number + 1,
+				self.voters.clone(),
+				self.last_finalized_in_rounds.clone(),
+				Some(inner.best_round.bridge_state()),
+				inner.best_round.finalized_sender(),
+				self.env.clone(),
+			);
+
+			let old_round = ::std::mem::replace(&mut inner.best_round, next_round);
+			inner.past_rounds.push(&*self.env, old_round);
+		}
 
 		// round has been updated. so we need to re-poll.
 		self.poll_unpin(cx)
-	}
-
-	fn completed_best_round(&mut self) -> Result<(), E::Error> {
-		let mut inner = self.inner.lock();
-
-		self.env.completed(
-			inner.best_round.round_number(),
-			inner.best_round.round_state(),
-			inner.best_round.dag_base(),
-			inner.best_round.historical_votes(),
-		)?;
-
-		let old_round_number = inner.best_round.round_number();
-
-		let next_round = VotingRound::new(
-			old_round_number + 1,
-			self.voters.clone(),
-			self.last_finalized_in_rounds.clone(),
-			Some(inner.best_round.bridge_state()),
-			inner.best_round.finalized_sender(),
-			self.env.clone(),
-		);
-
-		let old_round = ::std::mem::replace(&mut inner.best_round, next_round);
-		inner.past_rounds.push(&*self.env, old_round);
-		Ok(())
 	}
 
 	fn set_last_finalized_number(&mut self, finalized_number: N) -> bool {
