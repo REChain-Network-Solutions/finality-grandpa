@@ -190,9 +190,7 @@ where
 		cx: &mut Context,
 		voting_round: &mut VotingRound<H, N, E>,
 	) -> Poll<Result<Option<Commit<H, N, E::Signature, E::Id>>, E::Error>> {
-		while let Poll::Ready(Some(commit)) =
-			Stream::poll_next(Pin::new(&mut self.import_commits), cx)
-		{
+		while let Poll::Ready(Some(commit)) = self.import_commits.poll_next_unpin(cx) {
 			if !self.import_commit(voting_round, commit)? {
 				trace!(target: LOG_TARGET, "Ignoring invalid commit");
 			}
@@ -323,7 +321,7 @@ where
 
 	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
 		loop {
-			match Stream::poll_next(Pin::new(&mut self.past_rounds), cx) {
+			match self.past_rounds.poll_next_unpin(cx) {
 				Poll::Ready(Some((Ok(BackgroundRoundChange::Concluded(number)), round))) => {
 					let round = &round.inner;
 					round.env().concluded(

@@ -376,9 +376,9 @@ impl<S: Sink<I> + Unpin, I> Buffered<S, I> {
 		let polled = self.schedule_all(cx)?;
 
 		match polled {
-			Poll::Ready(()) => Sink::poll_flush(Pin::new(&mut self.inner), cx),
+			Poll::Ready(()) => self.inner.poll_flush_unpin(cx),
 			Poll::Pending => {
-				ready!(Sink::poll_flush(Pin::new(&mut self.inner), cx))?;
+				ready!(self.inner.poll_flush_unpin(cx))?;
 				Poll::Pending
 			},
 		}
@@ -386,13 +386,13 @@ impl<S: Sink<I> + Unpin, I> Buffered<S, I> {
 
 	fn schedule_all(&mut self, cx: &mut Context) -> Poll<Result<(), S::Error>> {
 		while !self.buffer.is_empty() {
-			ready!(Sink::poll_ready(Pin::new(&mut self.inner), cx))?;
+			ready!(self.inner.poll_ready_unpin(cx))?;
 
 			let item = self
 				.buffer
 				.pop_front()
 				.expect("we checked self.buffer.is_empty() just above; qed");
-			Sink::start_send(Pin::new(&mut self.inner), item)?;
+			self.inner.start_send_unpin(item)?;
 		}
 
 		Poll::Ready(Ok(()))
@@ -602,17 +602,13 @@ where
 			let mut inner = self.inner.lock();
 
 			// Do work on all background rounds, broadcasting any commits generated.
-			while let Poll::Ready(Some(item)) =
-				Stream::poll_next(Pin::new(&mut inner.past_rounds), cx)
-			{
+			while let Poll::Ready(Some(item)) = inner.past_rounds.poll_next_unpin(cx) {
 				let (number, commit) = item?;
 				self.global_out.push(CommunicationOut::Commit(number, commit));
 			}
 		}
 
-		while let Poll::Ready(res) =
-			Stream::poll_next(Pin::new(&mut self.finalized_notifications), cx)
-		{
+		while let Poll::Ready(res) = self.finalized_notifications.poll_next_unpin(cx) {
 			let inner = self.inner.clone();
 			let mut inner = inner.lock();
 
@@ -642,7 +638,7 @@ where
 	/// Otherwise, we will simply handle the commit and issue a finalization command
 	/// to the environment.
 	fn process_incoming(&mut self, cx: &mut Context) -> Result<(), E::Error> {
-		while let Poll::Ready(Some(item)) = Stream::poll_next(Pin::new(&mut self.global_in), cx) {
+		while let Poll::Ready(Some(item)) = self.global_in.poll_next_unpin(cx) {
 			match item? {
 				CommunicationIn::Commit(round_number, commit, mut process_commit_outcome) => {
 					trace!(
