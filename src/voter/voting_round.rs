@@ -21,7 +21,6 @@ use futures::{channel::mpsc::UnboundedSender, prelude::*};
 use log::{debug, trace, warn};
 
 use std::{
-	pin::Pin,
 	sync::Arc,
 	task::{Context, Poll},
 };
@@ -446,8 +445,7 @@ where
 	}
 
 	fn process_incoming(&mut self, cx: &mut Context) -> Result<(), E::Error> {
-		while let Poll::Ready(Some(incoming)) = Stream::poll_next(Pin::new(&mut self.incoming), cx)
-		{
+		while let Poll::Ready(Some(incoming)) = self.incoming.poll_next_unpin(cx) {
 			trace!(target: LOG_TARGET, "Round {}: Got incoming message", self.round_number());
 			self.handle_vote(incoming?)?;
 		}

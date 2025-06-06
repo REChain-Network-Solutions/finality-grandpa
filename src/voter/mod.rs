@@ -376,9 +376,9 @@ impl<S: Sink<I> + Unpin, I> Buffered<S, I> {
 		let polled = self.schedule_all(cx)?;
 
 		match polled {
-			Poll::Ready(()) => Sink::poll_flush(Pin::new(&mut self.inner), cx),
+			Poll::Ready(()) => self.inner.poll_flush_unpin(cx),
 			Poll::Pending => {
-				ready!(Sink::poll_flush(Pin::new(&mut self.inner), cx))?;
+				ready!(self.inner.poll_flush_unpin(cx))?;
 				Poll::Pending
 			},
 		}
@@ -386,13 +386,13 @@ impl<S: Sink<I> + Unpin, I> Buffered<S, I> {
 
 	fn schedule_all(&mut self, cx: &mut Context) -> Poll<Result<(), S::Error>> {
 		while !self.buffer.is_empty() {
-			ready!(Sink::poll_ready(Pin::new(&mut self.inner), cx))?;
+			ready!(self.inner.poll_ready_unpin(cx))?;
 
 			let item = self
 				.buffer
 				.pop_front()
 				.expect("we checked self.buffer.is_empty() just above; qed");
-			Sink::start_send(Pin::new(&mut self.inner), item)?;
+			self.inner.start_send_unpin(item)?;
 		}
 
 		Poll::Ready(Ok(()))
