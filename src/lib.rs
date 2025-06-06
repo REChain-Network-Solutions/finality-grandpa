@@ -139,6 +139,8 @@ impl<H, N> PrimaryPropose<H, N> {
 pub enum Error {
 	/// The block is not a descendent of the given base block.
 	NotDescendent,
+	/// The global stream was closed unexpectedly.
+	StreamClosed,
 }
 
 #[cfg(feature = "std")]
@@ -146,6 +148,7 @@ impl std::fmt::Display for Error {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match *self {
 			Error::NotDescendent => write!(f, "Block not descendent of base"),
+			Error::StreamClosed => write!(f, "Stream closed unexpectedly"),
 		}
 	}
 }
@@ -155,6 +158,7 @@ impl std::error::Error for Error {
 	fn description(&self) -> &str {
 		match *self {
 			Error::NotDescendent => "Block not descendent of base",
+			Error::StreamClosed => "Stream closed unexpectedly",
 		}
 	}
 }
@@ -203,6 +207,7 @@ pub trait Chain<H: Eq, N: Copy + BlockNumberOps> {
 		match self.ancestry(base, block) {
 			Ok(_) => true,
 			Err(Error::NotDescendent) => false,
+			Err(Error::StreamClosed) => false,
 		}
 	}
 }

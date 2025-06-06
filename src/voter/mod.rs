@@ -31,7 +31,7 @@ use futures::{
 	ready,
 };
 #[cfg(feature = "std")]
-use log::trace;
+use tracing::trace;
 
 use parking_lot::Mutex;
 
@@ -642,8 +642,29 @@ where
 	/// Otherwise, we will simply handle the commit and issue a finalization command
 	/// to the environment.
 	fn process_incoming(&mut self, cx: &mut Context) -> Result<(), E::Error> {
-		while let Poll::Ready(Some(item)) = Stream::poll_next(Pin::new(&mut self.global_in), cx) {
-			match item? {
+		// Drain all incoming messages from the global input stream.
+		loop {
+			let item = match self.global_in.poll_next_unpin(cx) {
+				Poll::Ready(Some(item)) => match item {
+					Ok(item) => item,
+					Err(e) => return Err(e),
+				},
+				Poll::Ready(None) => {
+					tracing::error!(
+						target: LOG_TARGET,
+						"Global input stream has been closed, no more messages will be processed."
+					);
+
+					// the stream is closed, we can't process any more messages.
+					return Err(crate::Error::StreamClosed.into());
+				},
+				Poll::Pending => {
+					// no messages available, we can return now.
+					return Ok(())
+				},
+			};
+
+			match item {
 				CommunicationIn::Commit(round_number, commit, mut process_commit_outcome) => {
 					trace!(
 						target: LOG_TARGET,
@@ -764,8 +785,6 @@ where
 				},
 			}
 		}
-
-		Ok(())
 	}
 
 	// process the logic of the best round.
