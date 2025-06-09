@@ -775,20 +775,31 @@ where
 		{
 			let mut inner = self.inner.lock();
 
-			let should_start_next = {
-				let completable = match inner.best_round.poll(cx)? {
-					Poll::Ready(()) => true,
-					Poll::Pending => false,
-				};
-
-				// start when we've cast all votes.
-				let precommitted =
-					matches!(inner.best_round.state(), Some(&VotingRoundState::Precommitted));
-
-				completable && precommitted
+			// Best round must be completable before we can start a new one.
+			match inner.best_round.poll(cx)? {
+				Poll::Ready(()) => {},
+				Poll::Pending => return Poll::Pending,
 			};
 
-			if !should_start_next {
+			// The state of the best round must advance to the point where we can
+			// start a new round.
+			// We can effectively start a new round when:
+			// - the best round future completed
+			// - the best round state is precommitted, which means we have cast all votes
+			let precommitted =
+				matches!(inner.best_round.state(), Some(&VotingRoundState::Precommitted));
+			if !precommitted {
+				trace!(
+					target: LOG_TARGET,
+					"Best round at {} is not precommitted. Waiting for precommit in state {:?}",
+					inner.best_round.round_number(),
+					inner.best_round.state(),
+				);
+
+				// This ensures we are not causing delays in the voting process. Previously,
+				// we relied on polling the future again which would save the waker via `process_incoming`.
+				inner.best_round.set_waker(cx.waker().clone());
+
 				return Poll::Pending
 			}
 
@@ -798,38 +809,32 @@ where
 				inner.best_round.round_number(),
 				inner.best_round.round_number() + 1,
 			);
-		}
 
-		self.completed_best_round()?;
+			// Complete the best round and start a new one.
+			self.env.completed(
+				inner.best_round.round_number(),
+				inner.best_round.round_state(),
+				inner.best_round.dag_base(),
+				inner.best_round.historical_votes(),
+			)?;
+
+			let old_round_number = inner.best_round.round_number();
+
+			let next_round = VotingRound::new(
+				old_round_number + 1,
+				self.voters.clone(),
+				self.last_finalized_in_rounds.clone(),
+				Some(inner.best_round.bridge_state()),
+				inner.best_round.finalized_sender(),
+				self.env.clone(),
+			);
+
+			let old_round = ::std::mem::replace(&mut inner.best_round, next_round);
+			inner.past_rounds.push(&*self.env, old_round);
+		}
 
 		// round has been updated. so we need to re-poll.
 		self.poll_unpin(cx)
-	}
-
-	fn completed_best_round(&mut self) -> Result<(), E::Error> {
-		let mut inner = self.inner.lock();
-
-		self.env.completed(
-			inner.best_round.round_number(),
-			inner.best_round.round_state(),
-			inner.best_round.dag_base(),
-			inner.best_round.historical_votes(),
-		)?;
-
-		let old_round_number = inner.best_round.round_number();
-
-		let next_round = VotingRound::new(
-			old_round_number + 1,
-			self.voters.clone(),
-			self.last_finalized_in_rounds.clone(),
-			Some(inner.best_round.bridge_state()),
-			inner.best_round.finalized_sender(),
-			self.env.clone(),
-		);
-
-		let old_round = ::std::mem::replace(&mut inner.best_round, next_round);
-		inner.past_rounds.push(&*self.env, old_round);
-		Ok(())
 	}
 
 	fn set_last_finalized_number(&mut self, finalized_number: N) -> bool {

@@ -74,6 +74,11 @@ where
 	primary_block: Option<(H, N)>,                     // a block posted by primary as a hint.
 	finalized_sender: UnboundedSender<FinalizedNotification<H, N, E>>,
 	best_finalized: Option<Commit<H, N, E::Signature, E::Id>>,
+
+	/// Waker to notify that we have switched to the precommited state
+	/// if we have returned `Poll::Pending` in the previous poll of
+	/// the `Voter::process_best_round`.
+	waker: Option<std::task::Waker>,
 }
 
 /// Whether we should vote in the current round (i.e. push votes to the sink.)
@@ -138,6 +143,7 @@ where
 			env,
 			last_round_state,
 			finalized_sender,
+			waker: None,
 		}
 	}
 
@@ -163,6 +169,7 @@ where
 			last_round_state,
 			finalized_sender,
 			best_finalized: None,
+			waker: None,
 		}
 	}
 
@@ -653,6 +660,11 @@ where
 						self.votes.set_precommitted_index();
 						self.outgoing.push(Message::Precommit(precommit));
 					}
+
+					if let Some(ref waker) = self.waker {
+						waker.wake_by_ref();
+					}
+
 					self.state = Some(State::Precommitted);
 				} else {
 					self.state = Some(State::Prevoted(precommit_timer));
@@ -666,7 +678,13 @@ where
 		Ok(())
 	}
 
-	// construct a prevote message based on local state.
+	/// Sets the internal waker to be used when we return `Poll::Pending` in the
+	/// `Voter::process_best_round` method.
+	pub(super) fn set_waker(&mut self, waker: std::task::Waker) {
+		self.waker = Some(waker);
+	}
+
+	/// Construct a prevote message based on local state.
 	fn construct_prevote(&self, last_round_state: &RoundState<H, N>) -> (H, E::BestChain) {
 		let last_round_estimate = last_round_state
 			.estimate
